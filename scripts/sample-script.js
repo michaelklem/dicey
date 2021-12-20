@@ -5,6 +5,10 @@
 // Runtime Environment's members available in the global scope.
 const hre = require("hardhat");
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function main() {
   // Hardhat always runs the compile task when running scripts with its command
   // line interface.
@@ -14,12 +18,29 @@ async function main() {
   // await hre.run('compile');
 
   // We get the contract to deploy
-  const Greeter = await hre.ethers.getContractFactory("Greeter");
-  const greeter = await Greeter.deploy("Hello, Hardhat!");
+  const DiceRoller = await hre.ethers.getContractFactory("DiceRoller");
+  const contract = await DiceRoller.deploy();
 
-  await greeter.deployed();
+  await contract.deployed();
 
-  console.log("Greeter deployed to:", greeter.address);
+  console.log("contract deployed to:", contract.address);
+
+  await contract.roll()
+  let a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  // await sleep(2000);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+  
+  // await sleep(3000);
+  
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+  
 }
 
 // We recommend this pattern to be able to use async/await everywhere

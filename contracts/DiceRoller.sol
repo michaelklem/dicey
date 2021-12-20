@@ -19,12 +19,31 @@ contract DiceRoller is Ownable {
     // can iterate over them later.
     address[] internal userAddresses;
 
+    uint256 private seed;
+
     // Emit this when the roll function is called.
     // Used by dapp to display results.
     event DiceWasRolled(address roller, uint result);
 
-    constructor() {}
+    constructor() {
+        // set the iniitial seed
+        seed = getRando();
+    }
 
+    function randomCheck() public onlyOwner view returns (uint256) {
+        return getRando();
+    }
+
+    /*
+        Generate a new seed for the next user when they roll
+    */
+    function getRando() internal view returns (uint256) {
+        // console.log("block.difficulty: %d", block.timestamp + block.difficulty);
+        uint256 tempSeed = (block.timestamp + block.difficulty) % 100;
+        console.log("Random number generated: %d", tempSeed);
+        return tempSeed;
+    }
+    
     function kill() external onlyOwner {
         require(isOwner(), "Only the owner can kill this contract");
         selfdestruct( payable(owner()) );
@@ -37,12 +56,13 @@ contract DiceRoller is Ownable {
     // generates a new dice roll for the address at msg.sender
     // emit an event with the rolled result.
     function roll() public {
-        console.log(msg.sender);
         // generate random concept
         DiceRoll memory diceRoll = DiceRoll(1,6);
         userRollHistory[msg.sender].push(diceRoll);
         userAddresses.push(msg.sender);
         emit DiceWasRolled(msg.sender, 6);
+
+        seed = getRando();
     }
 
     // returns historic data for specific address/user

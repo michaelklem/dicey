@@ -22,7 +22,6 @@ contract('DiceRoller', function ([ owner, other ]) {
 
     const users = await this.contract.getAllUsers();
     expect(users.length).to.equal(1);  
-    // Test that a ValueChanged event was emitted with the new value
   });
 })
 
