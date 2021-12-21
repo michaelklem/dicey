@@ -25,22 +25,63 @@ async function main() {
 
   console.log("contract deployed to:", contract.address);
 
-  await contract.roll()
-  let a1 = await contract.randomCheck()
-  console.log('random: ' + a1);
+  // let a1 = await contract.randomCheck()
+  // console.log('random: ' + a1);
 
   // await sleep(2000);
 
-  await contract.roll()
-  a1 = await contract.randomCheck()
-  console.log('random: ' + a1);
-  
+  await contract.roll(3,6,3)
+
   // await sleep(3000);
-  
+  /*
   await contract.roll()
   a1 = await contract.randomCheck()
   console.log('random: ' + a1);
-  
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+    
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+    
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+
+  await contract.roll()
+  a1 = await contract.randomCheck()
+  console.log('random: ' + a1);
+  */      
 }
 
 // We recommend this pattern to be able to use async/await everywhere

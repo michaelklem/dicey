@@ -8,8 +8,10 @@ contract DiceRoller is Ownable {
 
     // Dice Roll will consist of a dice type and its result.
     struct DiceRoll {
-        uint diceType;
-        uint result;
+        uint numberOfDice; // 1 = roll once, 4 = roll for die
+        uint sizeOfDie; // 6 = 6 sided die, 20 = 20 sided die
+        int adjustment; //+/- 4
+        int result;
     }
 
     // users can have multiple dice rolls
@@ -25,21 +27,15 @@ contract DiceRoller is Ownable {
     // Used by dapp to display results.
     event DiceWasRolled(address roller, uint result);
 
-    constructor() {
-        // set the iniitial seed
-        seed = getRando();
-    }
+    constructor() {}
 
-    function randomCheck() public onlyOwner view returns (uint256) {
-        return getRando();
-    }
 
     /*
         Generate a new seed for the next user when they roll
     */
-    function getRando() internal view returns (uint256) {
+    function getRando(uint _dieSize) internal view returns (uint256) {
         // console.log("block.difficulty: %d", block.timestamp + block.difficulty);
-        uint256 tempSeed = (block.timestamp + block.difficulty) % 100;
+        uint256 tempSeed = ((block.timestamp + block.difficulty) % _dieSize) + 1;
         console.log("Random number generated: %d", tempSeed);
         return tempSeed;
     }
@@ -53,17 +49,61 @@ contract DiceRoller is Ownable {
         return msg.sender == owner();
     }
 
-    // generates a new dice roll for the address at msg.sender
-    // emit an event with the rolled result.
-    function roll() public {
-        // generate random concept
-        DiceRoll memory diceRoll = DiceRoll(1,6);
+    /*
+        Called by app when it handles the actual randomization in JS because that 
+        is so much easier and doesn't cost anything. We just use this to store the 
+        result of the roll.
+
+
+        @result can be negative if you have a low enough dice roll and larger negative adjustment
+        Rolled 3 with -4 adjustment.
+    */
+    function wasRolled(uint _numberOfDice, uint _dieSize, int _adjustment, int result) public {
+        DiceRoll memory diceRoll = DiceRoll(_numberOfDice, _dieSize, _adjustment, result);
+        userRollHistory[msg.sender].push(diceRoll);
+        userAddresses.push(msg.sender);
+    }
+    
+    /*
+
+        generates a new dice roll for the address at msg.sender
+        emit an event with the rolled result.
+
+        Trying to implement roll20's syntax
+        <number of dice to roll>d<dice type [4 | 6 | 20 | 100] +/- <adjustment>
+        2d20+5
+    */
+    function roll(uint _numberOfDice, uint _dieSize, int _adjustment) public {
+        /*      
+        seed = 0;
+        while (_numberOfDice > 0) {
+            seed += getRando(_dieSize);
+            console.log('seed: %d',seed);
+            --_numberOfDice;
+        }
+        DiceRoll memory diceRoll = DiceRoll(1,1, 1,6);
         userRollHistory[msg.sender].push(diceRoll);
         userAddresses.push(msg.sender);
         emit DiceWasRolled(msg.sender, 6);
-
-        seed = getRando();
+        */
     }
+
+    // pass 1. 20, 5 to represent 1d20+5
+    // pass 1. 6 to represent 1d6
+    // function parseRollType(string memory _rollType) internal view {
+    // function parseRollType(string memory _numberOfDice, string memory _dieSize, string memory _adjustment) internal view {
+    //     // require(IsEmptyString(_rollType), "Expected a non-empty roll type");
+
+    // }
+
+
+    // function IsEmptyString(string memory str) internal view returns(bool) {        
+    //     bytes memory tempEmptyStringTest = bytes(str); // Uses memory
+    //     console.log("tempEmptyStringTest.length: %d",tempEmptyStringTest.length);
+    // //   console.log("%s waved %d times", msg.sender, totalWaveByAddress[msg.sender]);
+
+    //     return tempEmptyStringTest.length > 0;
+    // }
 
     // returns historic data for specific address/user
     function getUserRolls(address _address) external view returns (DiceRoll[] memory) {
