@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.4.22 <0.9.0;
+pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
@@ -13,7 +13,7 @@ import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
 //     "0xa36085F69e2889c224210F603D836748e7dC0088", 
 //     "0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4", 
 //     hre.ethers.utils.parseEther('0.1') // 100000000000000000
-//   );
+//   ); 
 // 
 // https://docs.chain.link/docs/vrf-contracts/
 
@@ -21,15 +21,35 @@ contract DiceRoller is VRFConsumerBase, Ownable {
 
     bytes32 private s_keyHash;
     uint256 private s_fee;
-    uint256 private constant ROLL_IN_PROGRESS = 42;
+    int private constant ROLL_IN_PROGRESS = 42;
+    int finalValue;
+    int callbackCalled;
 
+    struct DiceRollee {
+        address rollee;
+        uint256 randomness;
+        uint256 d20Value;
+        uint numberOfDice; // 1 = roll once, 4 = roll for die
+        uint sizeOfDie; // 6 = 6 sided die, 20 = 20 sided die
+        int adjustment; //+/- 4
+        int result;
+        uint[] rolledValues;
+    }
+    uint[] grolledValues;
     // s_rollers stores a mapping between the requestID (returned when a request is made), and the address of the roller. This is so the contract can keep track of who to assign the result to when it comes back.
     mapping(bytes32 => address) private s_rollers;
+    // mapping(bytes32 => DiceRollee) private s_rollers;
 
     // s_results stores the roller and the result of the dice roll.
-    mapping(address => uint256) private s_results;
+    // mapping(address => uint256) private s_results;
+    mapping(address => DiceRollee) private s_results;
     uint256 xrandomness;
+    uint256 xd100Value;
     uint256 xd20Value;
+    uint256 xd8Value;
+    uint256 xd6Value;
+    uint256 xd4Value;
+    uint32 x32Randomness;
 
     // Dice Roll will consist of a dice type and its result.
     struct DiceRoll {
@@ -67,9 +87,9 @@ contract DiceRoller is VRFConsumerBase, Ownable {
         s_fee = fee;
     }
 
-
+    // Any Eth and LINK token will get sent back to me before the contract is killed.
     function kill() external onlyOwner {
-        require(isOwner(), "Only the owner can kill this contract");
+        LINK.transfer(owner(), getLINKBalance());
         selfdestruct( payable(owner()) );
     }
 
@@ -101,21 +121,33 @@ contract DiceRoller is VRFConsumerBase, Ownable {
      *
      * @param roller address of the roller
      */
-    function rollDice(address roller) public onlyOwner returns (bytes32 requestId) {
+    function rollDice(address roller, uint _numberOfDice, uint _dieSize, int _adjustment) public onlyOwner returns (bytes32 requestId) {
         // checking LINK balance
         require(LINK.balanceOf(address(this)) >= s_fee, "Not enough LINK to pay fee");
+
 
         // checking if roller has already rolled die
         // require(s_results[roller] == 0, "Already rolled");
 
         // requesting randomness
         requestId = requestRandomness(s_keyHash, s_fee);
-
-        // storing requestId and roller address
         s_rollers[requestId] = roller;
 
         // emitting event to signal rolling of die
-        s_results[roller] = ROLL_IN_PROGRESS;
+        // struct DiceRollee {
+        //     address _rollee;
+        //     uint256 randomness;
+        //     uint256 d20Value;
+        //     uint numberOfDice; // 1 = roll once, 4 = roll for die
+        //     uint sizeOfDie; // 6 = 6 sided die, 20 = 20 sided die
+        //     int adjustment; //+/- 4
+        //     int result;
+        // }
+
+        // int[] memory tempX = new int[](_numberOfDice);
+        DiceRollee memory diceRollee2 = DiceRollee(roller,0, 0, _numberOfDice, _dieSize, _adjustment, ROLL_IN_PROGRESS, new uint[](_numberOfDice));
+        // s_results[roller] = ROLL_IN_PROGRESS;
+        s_results[roller] = diceRollee2;
         emit DiceRolled(requestId, roller);
     }
 
@@ -134,8 +166,56 @@ contract DiceRoller is VRFConsumerBase, Ownable {
      */
     function fulfillRandomness(bytes32 requestId, uint256 randomness) internal override {
         uint256 d20Value = (randomness % 20) + 1;
-        s_results[s_rollers[requestId]] = d20Value;
+        // int256 d20Value = int((randomness % 20) + 1);
+
+
+        
+        xd100Value = (randomness % 100) + 1;
+        xd8Value = (randomness % 8) + 1;
+        xd6Value = (randomness % 6) + 1;
+        xd4Value = (randomness % 4) + 1;
+        // s_results[s_rollers[requestId]] = d20Value;
+        DiceRollee storage rollee = s_results[s_rollers[requestId]];
+        delete rollee.rolledValues;
+        rollee.d20Value = d20Value;
+        rollee.result = 123;
+        rollee.randomness = randomness;
+
+        //666
+    //  struct DiceRollee {
+    //     address rollee;
+    //     uint256 randomness;
+    //     uint256 d20Value;
+    //     uint numberOfDice; // 1 = roll once, 4 = roll for die
+    //     uint sizeOfDie; // 6 = 6 sided die, 20 = 20 sided die
+    //     int adjustment; //+/- 4
+    //     int result;
+    //     int[] rolledValues;
+    // }       
+        uint counter;
+        uint256 tempRandomness = randomness;
+        int tempValue;
+        callbackCalled = 999;
+        // int[] memory rolledValues;
+        delete grolledValues; // 
+        while (counter < rollee.numberOfDice) {
+            // Need to add one otherwise the value can be 0.
+            uint curValue = uint(tempRandomness % rollee.sizeOfDie) + 1;
+            tempValue += int(curValue);
+            rollee.rolledValues.push(curValue);
+            grolledValues.push(curValue);
+            ++counter;
+            tempRandomness = tempRandomness << 2;
+        }
+        tempValue += rollee.adjustment;
+        rollee.result = tempValue;
+        // rollee.rolledValues = grolledValues;
+        finalValue = tempValue;
+
+        s_results[s_rollers[requestId]] = rollee;
+
         xrandomness = randomness;
+        x32Randomness = uint32(xrandomness);
         xd20Value = d20Value;
         emit DiceLanded(requestId, d20Value);
     }
@@ -146,9 +226,11 @@ contract DiceRoller is VRFConsumerBase, Ownable {
      * @return house as a string
      */
     function house(address player) public view returns (string memory) {
-        require(s_results[player] != 0, "Dice not rolled");
-        require(s_results[player] != ROLL_IN_PROGRESS, "Roll in progress");
-        return getHouseName(s_results[player]);
+        // require(s_results[player] != 0, "Dice not rolled");
+        require(s_results[player].result != 0, "Dice not rolled");
+        // require(s_results[player] != ROLL_IN_PROGRESS, "Roll in progress");
+        require(s_results[player].result != ROLL_IN_PROGRESS, "Roll in progress");
+        return getHouseName(s_results[player].d20Value);
     }
 
     function getHouseName(uint256 id) private pure returns (string memory) {
@@ -197,7 +279,7 @@ contract DiceRoller is VRFConsumerBase, Ownable {
         return userRollHistory[_address].length;
     }
 
-    function getRoller(address _roller) view public returns (uint256) {
+    function getRoller(address _roller) view public returns (DiceRollee memory) {
         return s_results[_roller];
     }
 
@@ -207,5 +289,46 @@ contract DiceRoller is VRFConsumerBase, Ownable {
 
     function getxd20Value() view public returns (uint256) {
         return xd20Value;
+    }
+
+    function getxd100Value() view public returns (uint256) {
+        return xd100Value;
+    }
+
+    function getxd8Value() view public returns (uint256) {
+        return xd8Value;
+    }
+
+    function getxd6Value() view public returns (uint256) {
+        return xd6Value;
+    }
+
+    function getxd4Value() view public returns (uint256) {
+        return xd4Value;
+    }
+
+    function getx32Randomness() view public returns (uint256) {
+        return x32Randomness;
+    }
+
+    function getBalance() view public returns (uint256) {
+        return address(this).balance;
+    }
+    function getfinalValue() view public returns (int) {
+        return finalValue;
+    }
+    function getcallbackCalled() view public returns (int) {
+        return callbackCalled;
+    }
+
+    function getrolledValues() view public returns (uint[] memory) {
+        return grolledValues;
+    }
+
+    // https://medium.com/@blockchain101/calling-the-function-of-another-contract-in-solidity-f9edfa921f4c
+    // https://medium.com/coinmonks/get-token-balance-for-any-eth-address-by-using-smart-contracts-in-js-b603fef2061c
+    // returns the amount of LINK tokens this contract has.
+    function getLINKBalance() view public onlyOwner returns (uint256) {
+       return LINK.balanceOf(address(this));
     }
 }
