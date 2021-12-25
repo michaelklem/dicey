@@ -181,31 +181,51 @@ contract DiceRoller is VRFConsumerBase, Ownable {
         rollee.result = 123;
         rollee.randomness = randomness;
 
-        //666
-    //  struct DiceRollee {
-    //     address rollee;
-    //     uint256 randomness;
-    //     uint256 d20Value;
-    //     uint numberOfDice; // 1 = roll once, 4 = roll for die
-    //     uint sizeOfDie; // 6 = 6 sided die, 20 = 20 sided die
-    //     int adjustment; //+/- 4
-    //     int result;
-    //     int[] rolledValues;
-    // }       
         uint counter;
         uint256 tempRandomness = randomness;
         int tempValue;
         callbackCalled = 999;
         // int[] memory rolledValues;
         delete grolledValues; // 
+        
+        // 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        // 1010101010101010
+        uint someValue1 = 77194726158210796949047323339125271902179989777093709359638389338608753093290;
+
+        // 0x55555555555555555555555555555555555555555555555555555555555555555
+        // 0101010101
+        uint someValue2 = 38597363079105398474523661669562635951089994888546854679819194669304376546645;
+
         while (counter < rollee.numberOfDice) {
             // Need to add one otherwise the value can be 0.
-            uint curValue = uint(tempRandomness % rollee.sizeOfDie) + 1;
+            uint curValue;
+            uint v = tempRandomness;
+            if (counter % 2 == 0) {
+                if (counter > 0){
+                    v = tempRandomness / (100*counter);
+                }
+                curValue = addmod(v, someValue1, rollee.sizeOfDie) + 1;
+
+            }
+            else {
+                if (counter > 0) {
+                    v = tempRandomness / (99*counter);
+                }
+                curValue = mulmod(v, someValue2, rollee.sizeOfDie) + 1;
+            }
+            // uint curValue = uint(tempRandomness % rollee.sizeOfDie) + 1;
             tempValue += int(curValue);
             rollee.rolledValues.push(curValue);
             grolledValues.push(curValue);
+            // tempRandomness = tempRandomness << 2;
+            // uint someValue = (counter % 2 == 0) ? someValue1 : someValue2;
+            // if (counter % 2 == 0) {
+            //     tempRandomness = tempRandomness | someValue1;
+            // }
+            // else {
+            //     tempRandomness = tempRandomness & someValue2;
+            // }
             ++counter;
-            tempRandomness = tempRandomness << 2;
         }
         tempValue += rollee.adjustment;
         rollee.result = tempValue;
@@ -218,6 +238,26 @@ contract DiceRoller is VRFConsumerBase, Ownable {
         x32Randomness = uint32(xrandomness);
         xd20Value = d20Value;
         emit DiceLanded(requestId, d20Value);
+    }
+
+   /**
+     * @notice Uses psuedo randomness based on blockchain data.
+     *
+     * @param roller address of the roller
+     */
+    function rollDiceFast(address roller, uint _numberOfDice, uint _dieSize, int _adjustment) public onlyOwner returns (bytes32 requestId) {
+        // Simple hacky way to generate a requestId that fits with the existing structure.
+        requestId = keccak256(abi.encodePacked(s_keyHash, block.timestamp));
+        s_rollers[requestId] = roller;
+
+
+        // int[] memory tempX = new int[](_numberOfDice);
+        DiceRollee memory diceRollee2 = DiceRollee(roller,0, 0, _numberOfDice, _dieSize, _adjustment, ROLL_IN_PROGRESS, new uint[](_numberOfDice));
+        // s_results[roller] = ROLL_IN_PROGRESS;
+        s_results[roller] = diceRollee2;
+        emit DiceRolled(requestId, roller);
+        uint256 randomness = (block.timestamp + block.difficulty);
+        fulfillRandomness(requestId, randomness);
     }
 
     /**
