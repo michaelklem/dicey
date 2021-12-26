@@ -4,52 +4,48 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
 
-// https://docs.chain.link/docs/vrf-contracts/
-// Testnet LINK are available from https://faucets.chain.link/kovan
-// Testnet ETH are available from https://faucets.chain.link/kovan
+// to do
+// verify I can return more data in the DiceLanded event
+// can a roller have multiple roll histories
+// userRollHistory can that work?
 
-//   const contract = await contractFactory.deploy(
-//     "0xdD3782915140c8f3b190B5D67eAc6dc5760C46E9", 
-//     "0xa36085F69e2889c224210F603D836748e7dC0088", 
-//     "0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4", 
-//     hre.ethers.utils.parseEther('0.1') // 100000000000000000
-//   ); 
-// 
-// https://docs.chain.link/docs/vrf-contracts/
-
+/*
+    https://docs.chain.link/docs/vrf-contracts/
+    Testnet LINK are available from https://faucets.chain.link/kovan
+    Kovan deploy values:
+    const contract = await contractFactory.deploy(
+        0xdD3782915140c8f3b190B5D67eAc6dc5760C46E9, // VRFCOORDINATOR
+        0xa36085F69e2889c224210F603D836748e7dC0088, // LINK
+        0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4,  // KEYHASH
+        100000000000000000 // FEE
+    ); 
+*/
 contract DiceRoller is VRFConsumerBase, Ownable {
 
-    bytes32 private s_keyHash;
-    uint256 private s_fee;
+    bytes32 private _chainLinkKeyHash;
+    uint256 private _chainlinkVRFFee;
     int private constant ROLL_IN_PROGRESS = 42;
-    int finalValue;
-    int callbackCalled;
 
     struct DiceRollee {
         address rollee;
-        uint256 randomness;
-        uint256 d20Value;
-        uint numberOfDice; // 1 = roll once, 4 = roll for die
+        uint256 randomness; /// Stored to help verify/debug results
+        uint numberOfDice; /// 1 = roll once, 4 = roll four die
         uint sizeOfDie; // 6 = 6 sided die, 20 = 20 sided die
-        int adjustment; //+/- 4
-        int result;
-        uint[] rolledValues;
+        int adjustment; /// Can be a positive or negative value
+        int result; /// result of all die rolls and adjustment
+        uint timestamp; /// when we rolled
+        uint[] rolledValues; /// array of individual rolls
     }
-    uint[] grolledValues;
-    // s_rollers stores a mapping between the requestID (returned when a request is made), and the address of the roller. This is so the contract can keep track of who to assign the result to when it comes back.
-    mapping(bytes32 => address) private s_rollers;
-    // mapping(bytes32 => DiceRollee) private s_rollers;
 
-    // s_results stores the roller and the result of the dice roll.
-    // mapping(address => uint256) private s_results;
-    mapping(address => DiceRollee) private s_results;
-    uint256 xrandomness;
-    uint256 xd100Value;
-    uint256 xd20Value;
-    uint256 xd8Value;
-    uint256 xd6Value;
-    uint256 xd4Value;
-    uint32 x32Randomness;
+    /**
+    * Mapping between the requestID (returned when a request is made), 
+    * and the address of the roller. This is so the contract can keep track of 
+    * who to assign the result to when it comes back.
+    */
+    mapping(bytes32 => address) private _rollers;
+
+    /// stores the roller and the result of the dice roll.
+    mapping(address => DiceRollee) private _results;
 
     // Dice Roll will consist of a dice type and its result.
     struct DiceRoll {
@@ -59,135 +55,187 @@ contract DiceRoller is VRFConsumerBase, Ownable {
         int result;
     }
 
-    // users can have multiple dice rolls
+    /// users can have multiple dice rolls
     mapping (address => DiceRoll[]) userRollHistory;
 
-    // keep list of user addresses for fun/stats
-    // can iterate over them later.
+    /// keep list of user addresses for fun/stats
+    /// can iterate over them later.
     address[] internal userAddresses;
 
-    uint256 private seed;
-
-    // Emit this when the roll function is called.
-    // Used by dapp to display results.
-    // event DiceWasRolled(address roller, uint result);
-    // DiceRolled event
+    /// Emit this when the roll function is called.
     event DiceRolled(bytes32 indexed requestId, address indexed roller);
-    event DiceLanded(bytes32 indexed requestId, uint256 indexed result);
 
-   // kovan
-    // vrf coordinator = 0xdD3782915140c8f3b190B5D67eAc6dc5760C46E9
-    // link = 0xa36085F69e2889c224210F603D836748e7dC0088
-    // keyHash = 0x6c3699283bda56ad74f6b855546325b68d482e983852a7a82979cc4807b641f4
-    // fee = 100000000000000000
+    /// Emitted when fulfillRandomness is called by Chainlink VRF to provide the random value.
+    event DiceLanded(bytes32 indexed requestId, address indexed roller, uint[] rolledvalues, int adjustment, int result);
+
+
     constructor(address vrfCoordinator, address link, bytes32 keyHash, uint256 fee)
         VRFConsumerBase(vrfCoordinator, link)
     {
-        s_keyHash = keyHash;
-        s_fee = fee;
+        _chainLinkKeyHash = keyHash;
+        _chainlinkVRFFee = fee;
     }
 
-    // Any Eth and LINK token will get sent back to me before the contract is killed.
+    /**
+    * When the contract is killed, make sure to return all unspent tokens back to my wallet.
+    */
     function kill() external onlyOwner {
         LINK.transfer(owner(), getLINKBalance());
         selfdestruct( payable(owner()) );
     }
 
-    function isOwner() internal view virtual returns (bool) {
-        return msg.sender == owner();
-    }
-
-    /*
-        Called by app when it handles the actual randomization in JS because that 
-        is so much easier and doesn't cost anything. We just use this to store the 
-        result of the roll.
-
-
-        @result can be negative if you have a low enough dice roll and larger negative adjustment
-        Rolled 3 with -4 adjustment.
+    /**
+    * Called by the front end if user wants to use the front end to 
+    * generate the random values. We just use this to store the result of the roll on the blockchain.
+    *
+    * @param numberOfDice how many dice are rolled
+    * @param dieSize the type of die rolled (4 = 4 sided, 6 = six sided, etc.)
+    * @param adjustment the modifier to add after all die have been rolled. Can be negative.
+    * @param result can be negative if you have a low enough dice roll and larger negative adjustment.
+    * Example, rolled 2 4 sided die with -4 adjustment.
     */
-    function wasRolled(uint _numberOfDice, uint _dieSize, int _adjustment, int result) public {
-        DiceRoll memory diceRoll = DiceRoll(_numberOfDice, _dieSize, _adjustment, result);
+    function wasRolled(uint numberOfDice, uint dieSize, int adjustment, int result) public {
+        DiceRollee memory diceRollee = DiceRollee(
+                msg.sender, 0, numberOfDice, 
+                dieSize, adjustment, result, 
+                block.timestamp,
+                new uint[](numberOfDice)
+                );
+        _results[msg.sender] = diceRollee;
+
+        DiceRoll memory diceRoll = DiceRoll(numberOfDice, dieSize, adjustment, result);
         userRollHistory[msg.sender].push(diceRoll);
         userAddresses.push(msg.sender);
     }
     
 
     /**
-     * @notice Requests randomness
-     * @dev Warning: if the VRF response is delayed, avoid calling requestRandomness repeatedly
-     * as that would give miners/VRF operators latitude about which VRF response arrives first.
-     * @dev You must review your implementation details with extreme care.
+     * @notice Requests randomness from Chainlink.
      *
      * @param roller address of the roller
+     * @param numberOfDice how many dice are rolled
+     * @param dieSize the type of die rolled (4 = 4 sided, 6 = six sided, etc.)
+     * @param adjustment the modifier to add after all die have been rolled. Can be negative.
      */
-    function rollDice(address roller, uint _numberOfDice, uint _dieSize, int _adjustment) public onlyOwner returns (bytes32 requestId) {
-        // checking LINK balance
-        require(LINK.balanceOf(address(this)) >= s_fee, "Not enough LINK to pay fee");
+    function rollDice(
+        address roller, 
+        uint numberOfDice, 
+        uint dieSize, 
+        int adjustment) 
+        public 
+        returns (bytes32 requestId) 
+    {
+        /// checking LINK balance to make sure we can call the Chainlink VRF.
+        require(LINK.balanceOf(address(this)) >= _chainlinkVRFFee, "Not enough LINK to pay fee");
 
+        userAddresses.push(msg.sender);
 
-        // checking if roller has already rolled die
-        // require(s_results[roller] == 0, "Already rolled");
+        /// Call to Chainlink VRF for randomness
+        requestId = requestRandomness(_chainLinkKeyHash, _chainlinkVRFFee);
+        _rollers[requestId] = roller;
 
-        // requesting randomness
-        requestId = requestRandomness(s_keyHash, s_fee);
-        s_rollers[requestId] = roller;
-
-        // emitting event to signal rolling of die
-        // struct DiceRollee {
-        //     address _rollee;
-        //     uint256 randomness;
-        //     uint256 d20Value;
-        //     uint numberOfDice; // 1 = roll once, 4 = roll for die
-        //     uint sizeOfDie; // 6 = 6 sided die, 20 = 20 sided die
-        //     int adjustment; //+/- 4
-        //     int result;
-        // }
-
-        // int[] memory tempX = new int[](_numberOfDice);
-        DiceRollee memory diceRollee2 = DiceRollee(roller,0, 0, _numberOfDice, _dieSize, _adjustment, ROLL_IN_PROGRESS, new uint[](_numberOfDice));
-        // s_results[roller] = ROLL_IN_PROGRESS;
-        s_results[roller] = diceRollee2;
+        DiceRollee memory diceRollee = DiceRollee(
+                roller, 0, numberOfDice, 
+                dieSize, adjustment, ROLL_IN_PROGRESS, 
+                block.timestamp,
+                new uint[](numberOfDice)
+                );
+        _results[roller] = diceRollee;
         emit DiceRolled(requestId, roller);
+    }
+
+
+    /**
+     * @notice Uses psuedo randomness based on blockchain data. This function is used to 
+     * compare speed of getting some sort of randomness straight from the blockchain 
+     * instead of waiting for Chainlink VRF to return a random value.
+     *
+     * @param roller address of the roller
+     * @param numberOfDice how many dice are rolled
+     * @param dieSize the type of die rolled (4 = 4 sided, 6 = six sided, etc.)
+     * @param adjustment the modifier to add after all die have been rolled. Can be negative.
+     */
+    function rollDiceFast(
+        address roller, 
+        uint numberOfDice, 
+        uint dieSize, 
+        int adjustment) 
+        public 
+        returns (bytes32 requestId) 
+    {
+        /// Simple hacky way to generate a requestId.
+        requestId = keccak256(abi.encodePacked(_chainLinkKeyHash, block.timestamp));
+        _rollers[requestId] = roller;
+        DiceRollee memory diceRollee = DiceRollee(
+                roller, 0, numberOfDice, 
+                dieSize, adjustment, ROLL_IN_PROGRESS, 
+                block.timestamp,
+                new uint[](numberOfDice)
+                );
+        _results[roller] = diceRollee;
+        emit DiceRolled(requestId, roller);
+        uint256 randomness = (block.timestamp + block.difficulty);
+        fulfillRandomness(requestId, randomness);
+    }
+
+    /// returns historic data for specific address/user
+    // function getUserRolls(address _address) public view returns (DiceRoll[] memory) {
+    //     return userRollHistory[_address];
+    // }
+
+    /// only allow the contract owner (me) to access this.
+    // function getAllUsers() public view returns (address[] memory) {
+    //     return userAddresses;
+    // }
+
+    /// gotta know how many folks have used this contract
+    // function countUsers() view public returns (uint) {
+    //     return userAddresses.length;
+    // }
+
+    /// gotta know how many times a specific user rolled.
+    // function countUserRolls(address _address) view public returns (uint) {
+    //     return userRollHistory[_address].length;
+    // }
+
+    function getRoller(address _roller) view public returns (DiceRollee memory) {
+        return _results[_roller];
+    }
+
+    function getBalance() view public returns (uint256) {
+        return address(this).balance;
+    }
+
+    // https://medium.com/@blockchain101/calling-the-function-of-another-contract-in-solidity-f9edfa921f4c
+    // https://medium.com/coinmonks/get-token-balance-for-any-eth-address-by-using-smart-contracts-in-js-b603fef2061c
+    // returns the amount of LINK tokens this contract has.
+    function getLINKBalance() view public onlyOwner returns (uint256) {
+       return LINK.balanceOf(address(this));
     }
 
     /**
      * @notice Callback function used by VRF Coordinator to return the random number
      * to this contract.
-     * @dev Some action on the contract state should be taken here, like storing the result.
-     * @dev WARNING: take care to avoid having multiple VRF requests in flight if their order of arrival would result
-     * in contract states with different outcomes. Otherwise miners or the VRF operator would could take advantage
-     * by controlling the order.
-     * @dev The VRF Coordinator will only send this function verified responses, and the parent VRFConsumerBase
-     * contract ensures that this method only receives randomness from the designated VRFCoordinator.
+     *
+     * This is the core function where we try to generate random values from a single
+     * random value provided. For each die to roll, we use the passed inrandom value
+     * perform some calculation on it to generate a new "random" value that we then
+     * perform the mod on. Goal is if you are rolling x 10 sided die, each roll 
+     * generates a different value.
      *
      * @param requestId bytes32
      * @param randomness The random result returned by the oracle
      */
     function fulfillRandomness(bytes32 requestId, uint256 randomness) internal override {
-        uint256 d20Value = (randomness % 20) + 1;
-        // int256 d20Value = int((randomness % 20) + 1);
-
-
-        
-        xd100Value = (randomness % 100) + 1;
-        xd8Value = (randomness % 8) + 1;
-        xd6Value = (randomness % 6) + 1;
-        xd4Value = (randomness % 4) + 1;
-        // s_results[s_rollers[requestId]] = d20Value;
-        DiceRollee storage rollee = s_results[s_rollers[requestId]];
+        /// Associate the random value with the roller based on requestId.
+        DiceRollee storage rollee = _results[_rollers[requestId]];
         delete rollee.rolledValues;
-        rollee.d20Value = d20Value;
-        rollee.result = 123;
         rollee.randomness = randomness;
 
-        uint counter;
-        uint256 tempRandomness = randomness;
-        int tempValue;
-        callbackCalled = 999;
-        // int[] memory rolledValues;
-        delete grolledValues; // 
+        uint counter; /// Tracks how many die have been rolled.
+        int calculatedValue;
         
+        /// Using these values to manipulate the random value on each die roll.
         // 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
         // 1010101010101010
         uint someValue1 = 77194726158210796949047323339125271902179989777093709359638389338608753093290;
@@ -196,179 +244,42 @@ contract DiceRoller is VRFConsumerBase, Ownable {
         // 0101010101
         uint someValue2 = 38597363079105398474523661669562635951089994888546854679819194669304376546645;
 
+        /// iterate over each die to be rolled and calc the value based on a sort of randomness.
         while (counter < rollee.numberOfDice) {
-            // Need to add one otherwise the value can be 0.
             uint curValue;
-            uint v = tempRandomness;
+            uint v = randomness;
+            
+            /**
+             *   This code attempts to force enough chnge in the passed random value
+             *   so that can look like it generates multiple random numbers.
+            */
             if (counter % 2 == 0) {
                 if (counter > 0){
-                    v = tempRandomness / (100*counter);
+                    v = randomness / (100*counter);
                 }
+                /// Add 1 to prevent returning 0
                 curValue = addmod(v, someValue1, rollee.sizeOfDie) + 1;
-
-            }
-            else {
+            } else {
                 if (counter > 0) {
-                    v = tempRandomness / (99*counter);
+                    v = randomness / (99*counter);
                 }
+                /// Add 1 to prevent returning 0
                 curValue = mulmod(v, someValue2, rollee.sizeOfDie) + 1;
             }
-            // uint curValue = uint(tempRandomness % rollee.sizeOfDie) + 1;
-            tempValue += int(curValue);
+
+            calculatedValue += int(curValue);
             rollee.rolledValues.push(curValue);
-            grolledValues.push(curValue);
-            // tempRandomness = tempRandomness << 2;
-            // uint someValue = (counter % 2 == 0) ? someValue1 : someValue2;
-            // if (counter % 2 == 0) {
-            //     tempRandomness = tempRandomness | someValue1;
-            // }
-            // else {
-            //     tempRandomness = tempRandomness & someValue2;
-            // }
             ++counter;
         }
-        tempValue += rollee.adjustment;
-        rollee.result = tempValue;
-        // rollee.rolledValues = grolledValues;
-        finalValue = tempValue;
+        calculatedValue += rollee.adjustment;
+        rollee.result = calculatedValue;
+        _results[_rollers[requestId]] = rollee;
 
-        s_results[s_rollers[requestId]] = rollee;
-
-        xrandomness = randomness;
-        x32Randomness = uint32(xrandomness);
-        xd20Value = d20Value;
-        emit DiceLanded(requestId, d20Value);
+        emit DiceLanded(requestId, rollee.rollee, rollee.rolledValues, rollee.adjustment, calculatedValue);
     }
 
-   /**
-     * @notice Uses psuedo randomness based on blockchain data.
-     *
-     * @param roller address of the roller
-     */
-    function rollDiceFast(address roller, uint _numberOfDice, uint _dieSize, int _adjustment) public onlyOwner returns (bytes32 requestId) {
-        // Simple hacky way to generate a requestId that fits with the existing structure.
-        requestId = keccak256(abi.encodePacked(s_keyHash, block.timestamp));
-        s_rollers[requestId] = roller;
 
-
-        // int[] memory tempX = new int[](_numberOfDice);
-        DiceRollee memory diceRollee2 = DiceRollee(roller,0, 0, _numberOfDice, _dieSize, _adjustment, ROLL_IN_PROGRESS, new uint[](_numberOfDice));
-        // s_results[roller] = ROLL_IN_PROGRESS;
-        s_results[roller] = diceRollee2;
-        emit DiceRolled(requestId, roller);
-        uint256 randomness = (block.timestamp + block.difficulty);
-        fulfillRandomness(requestId, randomness);
-    }
-
-    /**
-     * @notice Get the house assigned to the player once the address has rolled
-     * @param player address
-     * @return house as a string
-     */
-    function house(address player) public view returns (string memory) {
-        // require(s_results[player] != 0, "Dice not rolled");
-        require(s_results[player].result != 0, "Dice not rolled");
-        // require(s_results[player] != ROLL_IN_PROGRESS, "Roll in progress");
-        require(s_results[player].result != ROLL_IN_PROGRESS, "Roll in progress");
-        return getHouseName(s_results[player].d20Value);
-    }
-
-    function getHouseName(uint256 id) private pure returns (string memory) {
-    string[20] memory houseNames = [
-        "Targaryen",
-        "Lannister",
-        "Stark",
-        "Tyrell",
-        "Baratheon",
-        "Martell",
-        "Tully",
-        "Bolton",
-        "Greyjoy",
-        "Arryn",
-        "Frey",
-        "Mormont",
-        "Tarley",
-        "Dayne",
-        "Umber",
-        "Valeryon",
-        "Manderly",
-        "Clegane",
-        "Glover",
-        "Karstark"
-        ];
-        return houseNames[id - 1];
-    }
-    
-    // returns historic data for specific address/user
-    function getUserRolls(address _address) public view returns (DiceRoll[] memory) {
-        return userRollHistory[_address];
-    }
-
-    // only allow the contract owner (me) to access this.
-    function getAllUsers() public view returns (address[] memory) {
-        return userAddresses;
-    }
-
-    // gotta know how many folks have used this contract
-    function countUsers() view public returns (uint) {
-        return userAddresses.length;
-    }
-
-    // gotta know how many times a specific user rolled.
-    function countUserRolls(address _address) view public returns (uint) {
-        return userRollHistory[_address].length;
-    }
-
-    function getRoller(address _roller) view public returns (DiceRollee memory) {
-        return s_results[_roller];
-    }
-
-    function getxrandomness() view public returns (uint256) {
-        return xrandomness;
-    }
-
-    function getxd20Value() view public returns (uint256) {
-        return xd20Value;
-    }
-
-    function getxd100Value() view public returns (uint256) {
-        return xd100Value;
-    }
-
-    function getxd8Value() view public returns (uint256) {
-        return xd8Value;
-    }
-
-    function getxd6Value() view public returns (uint256) {
-        return xd6Value;
-    }
-
-    function getxd4Value() view public returns (uint256) {
-        return xd4Value;
-    }
-
-    function getx32Randomness() view public returns (uint256) {
-        return x32Randomness;
-    }
-
-    function getBalance() view public returns (uint256) {
-        return address(this).balance;
-    }
-    function getfinalValue() view public returns (int) {
-        return finalValue;
-    }
-    function getcallbackCalled() view public returns (int) {
-        return callbackCalled;
-    }
-
-    function getrolledValues() view public returns (uint[] memory) {
-        return grolledValues;
-    }
-
-    // https://medium.com/@blockchain101/calling-the-function-of-another-contract-in-solidity-f9edfa921f4c
-    // https://medium.com/coinmonks/get-token-balance-for-any-eth-address-by-using-smart-contracts-in-js-b603fef2061c
-    // returns the amount of LINK tokens this contract has.
-    function getLINKBalance() view public onlyOwner returns (uint256) {
-       return LINK.balanceOf(address(this));
+    function isOwner() internal view virtual returns (bool) {
+        return msg.sender == owner();
     }
 }
