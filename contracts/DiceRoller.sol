@@ -5,6 +5,14 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
 
 /*
+    This is my first smart contract that I created to learn Solidity on my own and away from tutorials. My goals
+    are to learn different aspects of smart contract development by doing my own research which helps with my overall
+    understanding. I wanted to create something that would be minimal so I can complete it fairly quickly and push it to the community
+    for feedback. I also want to expand beyond the smart contract and create the user interface, unit tests, then replicate this
+    across other blockchains, etc. Final goal is to document my learning process and progress to possibly help others explore
+    the web 3.0 ecosystem.
+*/
+/*
     https://docs.chain.link/docs/vrf-contracts/
     Testnet LINK are available from https://faucets.chain.link/kovan
     Kovan deploy values:
