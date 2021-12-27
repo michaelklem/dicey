@@ -11,6 +11,16 @@ import "@chainlink/contracts/src/v0.8/VRFConsumerBase.sol";
     for feedback. I also want to expand beyond the smart contract and create the user interface, unit tests, then replicate this
     across other blockchains, etc. Final goal is to document my learning process and progress to possibly help others explore
     the web 3.0 ecosystem.
+    
+    I also find the use of a blockchain dice roller smart contract ingeniously ironic in its ridiculousness for this platform.
+    
+    The main APIs here are:
+    hasRolled which will be used by a user interface to store values generated from the front end code to the block chain.
+    rollDice which ends up making use of Chainlink's VRF to get a random value.
+    rollDiceFast just uses some blockchain data to simulate a psuedo random number
+    
+    I am also keeping a history of all the dice rolls ever made. This will be good for a future experiment on how to retrieve data from a 
+    deployed contract when I want to update it without lossing data.
 */
 /*
     https://docs.chain.link/docs/vrf-contracts/
