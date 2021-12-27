@@ -45,9 +45,10 @@ contract DiceRoller is VRFConsumerBase, Ownable {
         uint8 numberOfDie; /// 1 = roll once, 4 = roll four die
         uint8 dieSize; // 6 = 6 sided die, 20 = 20 sided die
         int8 adjustment; /// Can be a positive or negative value
-        int8 result; /// result of all die rolls and adjustment
+        int16 result; /// Result of all die rolls and adjustment. Can be negative because of a negative adjustment.
+        /// Max value can be 1000 (10 * 100 sided die rolled)
         bool hasRolled; /// Used in some logic tests
-        uint8[] rolledValues; /// array of individual rolls
+        uint8[] rolledValues; /// array of individual rolls. These can only be positive.
     }
 
     /**
@@ -73,7 +74,13 @@ contract DiceRoller is VRFConsumerBase, Ownable {
     event DiceRolled(bytes32 indexed requestId, address indexed roller);
 
     /// Emitted when fulfillRandomness is called by Chainlink VRF to provide the random value.
-    event DiceLanded(bytes32 indexed requestId, address indexed roller, uint8[] rolledvalues, int8 adjustment, int8 result);
+    event DiceLanded(
+        bytes32 indexed requestId, 
+        address indexed roller, 
+        uint8[] rolledvalues, 
+        int8 adjustment, 
+        int16 result
+        );
 
     // Allow up to 10 dice to be rolled.
     modifier validateNumberOfDie(uint8 _numberOfDie) {
@@ -282,7 +289,7 @@ contract DiceRoller is VRFConsumerBase, Ownable {
     function fulfillRandomness(bytes32 _requestId, uint256 _randomness) internal override {
         /// Associate the random value with the roller based on requestId.
         DiceRollee storage rollee = currentRoll[rollers[_requestId]];
-        // delete rollee.rolledValues;
+        delete rollee.rolledValues;
         rollee.randomness = _randomness;
 
         uint counter; /// Tracks how many die have been rolled.
@@ -317,7 +324,7 @@ contract DiceRoller is VRFConsumerBase, Ownable {
         }// while
 
         calculatedValue += rollee.adjustment;
-        rollee.result = int8(calculatedValue);
+        rollee.result = int16(calculatedValue);
         address rollerAdress = rollers[_requestId];
         currentRoll[rollerAdress] = rollee;
         rollerHistory[rollerAdress].push(rollee);
